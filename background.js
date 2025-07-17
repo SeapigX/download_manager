@@ -1,7 +1,6 @@
 let cachedRules = [];
 let isInitialized = false;
 
-// 扩展名提取函数
 function getFileExtension(filename) {
     const lastDotIndex = filename.lastIndexOf('.');
     return lastDotIndex >= 0
@@ -41,19 +40,14 @@ function cleanPath(path) {
     return path.replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/');
 }
 
+// 监听规则变化
 chrome.storage.onChanged.addListener((changes) => {
     if (changes.rules) {
         cachedRules = changes.rules.newValue || [];
     }
 });
 
-function handleDownload(item, suggest) {
-    if (!isInitialized) {
-        console.warn("Rules not initialized yet, using default path");
-        suggest({ filename: `Others/${item.filename}` });
-        return;
-    }
-
+function processDownload(item, suggest) {
     const ext = getFileExtension(item.filename);
     if (!ext) {
         suggest({ filename: `Others/${item.filename}` });
@@ -71,13 +65,48 @@ function handleDownload(item, suggest) {
     suggest({ filename: `${targetPath}/${item.filename}` });
 }
 
-// 初始化并设置监听
-initializeRules().then(() => {
-    chrome.downloads.onDeterminingFilename.addListener(handleDownload);
-}).catch((error) => {
-    console.error("Failed to initialize rules:", error);
-    // 即使初始化失败也设置监听，使用默认路径
-    chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+// 核心修复：重构下载处理逻辑
+function handleDownload(item, suggest) {
+    if (isInitialized) {
+        processDownload(item, suggest);
+    } else {
+        // 同步返回默认路径，避免阻塞
         suggest({ filename: `Others/${item.filename}` });
+        // 异步初始化以备后续下载使用
+        if (!isInitialized) initializeRules();
+    }
+}
+
+function setupAlarms() {
+    chrome.alarms.onAlarm.addListener((alarm) => {
+        if (alarm.name === 'keepAlive') {
+            console.log('Service Worker 保活唤醒');
+        }
     });
-});
+}
+
+async function initExtension() {
+    try {
+        await initializeRules();
+
+        // 注册下载监听器（确保只注册一次）
+        chrome.downloads.onDeterminingFilename.removeListener(handleDownload);
+        chrome.downloads.onDeterminingFilename.addListener(handleDownload);
+
+        // 设置alarm监听器
+        setupAlarms();
+
+        // 创建保活定时器
+        chrome.alarms.create('keepAlive', {
+            periodInMinutes: 5,
+            delayInMinutes: 1  // 延迟启动避免冲突
+        });
+    } catch (error) {
+        console.error("初始化失败:", error);
+    }
+}
+
+chrome.runtime.onInstalled.addListener(initExtension);
+chrome.runtime.onStartup.addListener(initExtension);
+
+if (chrome.runtime.id) initExtension();
