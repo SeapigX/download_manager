@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Download manager",
+  "version": "1.1",
+  "description": "\u81ea\u52a8\u6839\u636e\u6587\u4ef6\u7c7b\u578b\u5206\u7c7b\u4e0b\u8f7d\u6587\u4ef6\u3002",
+  "permissions": ["downloads", "downloads.shelf", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_icon": {
+      "48": "icons/icon.png"
+    },
+    "default_popup": "popup.html",
+    "default_title": "\u4e0b\u8f7d\u5206\u7c7b\u63d2\u4ef6"
+  },
+  "icons": {
+    "48": "icons/icon.png"
+  }
+}
