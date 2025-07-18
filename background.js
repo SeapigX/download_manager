@@ -1,26 +1,35 @@
+// background.js (Manifest V3 Service Worker)
+
+// 缓存的规则和状态
 let cachedRules = [];
 let isInitialized = false;
 
+// 获取文件后缀
 function getFileExtension(filename) {
-    const lastDotIndex = filename.lastIndexOf('.');
-    return lastDotIndex >= 0
-        ? `.${filename.slice(lastDotIndex + 1).toLowerCase().trim()}`
-        : '';
+    const idx = filename.lastIndexOf('.');
+    return idx >= 0 ? `.${filename.slice(idx + 1).toLowerCase().trim()}` : '';
 }
 
-function initializeRules() {
+// 清理路径
+function cleanPath(path) {
+    return path.replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/');
+}
+
+// 初始化默认规则
+async function initializeRules() {
+    if (isInitialized) return;
     return new Promise((resolve) => {
         chrome.storage.sync.get('rules', ({ rules }) => {
             if (!rules) {
                 rules = [
-                    { id: 1, name: "文档文件", extensions: ".doc, .docx, .txt, .pdf", path: "/Documents" },
-                    { id: 2, name: "图片文件", extensions: ".jpg, .png, .jpeg, .gif, .webp", path: "/Images" },
-                    { id: 3, name: "表格文件", extensions: ".xls, .xlsx, .csv", path: "/Documents/Spreadsheets" },
-                    { id: 4, name: "压缩文件", extensions: ".zip, .rar, .tar, .gz, .7z", path: "/Archives" },
-                    { id: 5, name: "音频文件", extensions: ".mp3, .wav, .flac, .aac", path: "/Music" },
-                    { id: 6, name: "视频文件", extensions: ".mp4, .avi, .mkv, .mov", path: "/Videos" },
-                    { id: 7, name: "代码文件", extensions: ".js, .py, .java, .cpp, .c", path: "/Code" },
-                    { id: 8, name: "配置文件", extensions: ".json, .xml, .yaml", path: "/Config" }
+                    { id: 1, name: "文档文件",    extensions: ".doc,.docx,.txt,.pdf",            path: "/Documents" },
+                    { id: 2, name: "图片文件",    extensions: ".jpg,.png,.jpeg,.gif,.webp",     path: "/Images" },
+                    { id: 3, name: "表格文件",    extensions: ".xls,.xlsx,.csv",               path: "/Documents/Spreadsheets" },
+                    { id: 4, name: "压缩文件",    extensions: ".zip,.rar,.tar,.gz,.7z",         path: "/Archives" },
+                    { id: 5, name: "音频文件",    extensions: ".mp3,.wav,.flac,.aac",           path: "/Music" },
+                    { id: 6, name: "视频文件",    extensions: ".mp4,.avi,.mkv,.mov",            path: "/Videos" },
+                    { id: 7, name: "代码文件",    extensions: ".js,.py,.java,.cpp,.c",          path: "/Code" },
+                    { id: 8, name: "配置文件",    extensions: ".json,.xml,.yaml",               path: "/Config" }
                 ];
                 chrome.storage.sync.set({ rules }, () => {
                     cachedRules = rules;
@@ -36,77 +45,68 @@ function initializeRules() {
     });
 }
 
-function cleanPath(path) {
-    return path.replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/');
-}
-
-// 监听规则变化
-chrome.storage.onChanged.addListener((changes) => {
-    if (changes.rules) {
-        cachedRules = changes.rules.newValue || [];
-    }
-});
-
+// 处理下载路径
 function processDownload(item, suggest) {
     const ext = getFileExtension(item.filename);
-    if (!ext) {
-        suggest({ filename: `Others/${item.filename}` });
-        return;
+    let targetDir = 'Others';
+    if (ext) {
+        const rule = cachedRules.find(r =>
+            r.extensions.split(',').map(e => e.trim()).includes(ext)
+        );
+        if (rule) targetDir = cleanPath(rule.path);
     }
-
-    const matchedRule = cachedRules.find(rule =>
-        rule.extensions
-            .split(',')
-            .map(e => e.trim().toLowerCase())
-            .includes(ext)
-    );
-
-    const targetPath = cleanPath(matchedRule ? matchedRule.path : 'Others');
-    suggest({ filename: `${targetPath}/${item.filename}` });
+    suggest({ filename: `${targetDir}/${item.filename}` });
 }
 
-// 核心修复：重构下载处理逻辑
+// 下载监听入口
 function handleDownload(item, suggest) {
     if (isInitialized) {
         processDownload(item, suggest);
     } else {
-        // 同步返回默认路径，避免阻塞
+        // 首次调用，先给个默认返回
         suggest({ filename: `Others/${item.filename}` });
-        // 异步初始化以备后续下载使用
-        if (!isInitialized) initializeRules();
+        // 异步初始化
+        initializeRules();
     }
 }
 
-function setupAlarms() {
-    chrome.alarms.onAlarm.addListener((alarm) => {
-        if (alarm.name === 'keepAlive') {
-            console.log('Service Worker 保活唤醒');
-        }
+// 设置定时心跳，定期唤醒 SW
+function setupAlarm() {
+    chrome.alarms.create('keepAlive', {
+        periodInMinutes: 5,
+        delayInMinutes: 1
     });
 }
 
-async function initExtension() {
-    try {
-        await initializeRules();
-
-        // 注册下载监听器（确保只注册一次）
-        chrome.downloads.onDeterminingFilename.removeListener(handleDownload);
-        chrome.downloads.onDeterminingFilename.addListener(handleDownload);
-
-        // 设置alarm监听器
-        setupAlarms();
-
-        // 创建保活定时器
-        chrome.alarms.create('keepAlive', {
-            periodInMinutes: 5,
-            delayInMinutes: 1  // 延迟启动避免冲突
-        });
-    } catch (error) {
-        console.error("初始化失败:", error);
+// 所有事件绑定放在顶层，确保 SW 每次激活时即注册
+chrome.storage.onChanged.addListener(({ rules }) => {
+    if (rules) {
+        cachedRules = rules.newValue;
     }
-}
+});
 
-chrome.runtime.onInstalled.addListener(initExtension);
-chrome.runtime.onStartup.addListener(initExtension);
+chrome.downloads.onDeterminingFilename.addListener(handleDownload);
 
-if (chrome.runtime.id) initExtension();
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'keepAlive') {
+        // 心跳日志，可根据需要做轻量任务
+        console.log('[keepAlive] Service Worker awakened');
+    }
+});
+
+// 安装/更新触发
+chrome.runtime.onInstalled.addListener(async () => {
+    await initializeRules();
+    setupAlarm();
+});
+
+// 浏览器启动触发
+chrome.runtime.onStartup.addListener(async () => {
+    await initializeRules();
+    setupAlarm();
+});
+
+// 如果 SW 已加载，立即初始化一次
+initializeRules().then(() => {
+    setupAlarm();
+});
