@@ -73,7 +73,7 @@ function handleDownload(item, suggest) {
 // 设置定时心跳，定期唤醒 SW
 function setupAlarm() {
     chrome.alarms.create('keepAlive', {
-        periodInMinutes: 5,
+        periodInMinutes: 1,
         delayInMinutes: 1
     });
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Download manager",
-  "version": "1.1",
+  "version": "1.2",
   "description": "\u81ea\u52a8\u6839\u636e\u6587\u4ef6\u7c7b\u578b\u5206\u7c7b\u4e0b\u8f7d\u6587\u4ef6\u3002",
   "permissions": ["downloads", "downloads.shelf", "storage","alarms"],
   "background": {
